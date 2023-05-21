@@ -1,0 +1,131 @@
+---
+title: "sql_r"
+editor: visual
+format:
+  html:
+    code-fold: true
+    code-summary: "mostrar o código"
+    code-overflow: wrap
+---
+
+## Anexo 1 - Balanço Orçamentário
+
+Receitas
+
+NRE1 Categoria Econômica
+
+NRE2 Origem NRE3 Espécie Receita
+
+Natureza Receita
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+```{r}
+# https://kbroman.org/knitr_knutshell/pages/Rmarkdown.html
+knitr::opts_chunk$set( echo=TRUE, warning=FALSE, message=FALSE, tidy = "styler")
+options(encoding = "latin1")
+
+# https://www.r-bloggers.com/the-notin-operator/
+'%!in%' <- Negate('%in%')
+```
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(DT)
+library(plotly)
+library(lubridate)
+library(forcats)
+library(janitor)
+library(stringr)
+library(purrr)
+library(dplyr)
+```
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+You can add options to executable code l
+
+```{r}
+a1_receita<- head(read_excel("A1_BO/A1_receita.xlsx") %>% janitor::clean_names(),-1)%>% replace(is.na(.), 0)
+
+
+a1_receita <- a1_receita %>% filter(nre1_categoria_economica_codigo != "-7") %>%   mutate(data_ts = ceiling_date( parse_date_time(paste0(ano_lancamento,"-",str_sub(mes_lancamento_codigo_numerico_aaaamm, start = 5L),"-01"),"%y%m%d") %m+% months(1), 'month') %m-% days(1))
+
+
+a1_receita <- a1_receita %>% mutate ( codigo_origem = paste0(nre1_categoria_economica_codigo,nre2_origem_receita_codigo_origem), nome_origem = paste0(nre1_categoria_economica_nome,"-", nre2_origem_receita_nome), codigo_receita = paste0(codigo_origem, nre3_especie_receita_codigo_especie), nome_receita = paste0(nome_origem,"-", nre3_especie_receita_nome),)
+
+datatable(a1_receita %>% filter (data_ts == max(data_ts)%m+% months(-1))%>% group_by(nre2_origem_receita_nome, nre3_especie_receita_nome, item_informacao, data_ts, mes_lancamento_sigla_mmm) %>% summarise(saldo = sum(saldo_r_item_informacao)) %>% pivot_wider(names_from = item_informacao, values_from = saldo))
+
+```
+
+```{r}
+
+
+mes_relatorio <- "ABR"
+
+rec_intra <- c(7,8)
+
+teste1 <- a1_receita %>% filter (mes_lancamento_sigla_mmm == mes_relatorio,codigo_origem == 11)%>% group_by(codigo_origem, codigo_receita, nre2_origem_receita_nome, nre3_especie_receita_nome, item_informacao, data_ts, mes_lancamento_sigla_mmm) %>% summarise(saldo = sum(saldo_r_item_informacao)) %>% pivot_wider(names_from = item_informacao, values_from = saldo) %>% adorn_totals("row")%>% arrange(nre2_origem_receita_nome) %>% mutate(codigo_receita = ifelse(codigo_origem == "Total",str_sub(max(codigo_receita),end = -2L),codigo_receita))
+  
+
+
+receita <- function(origem){
+  teste <- a1_receita %>% filter (mes_lancamento_sigla_mmm == mes_relatorio,codigo_origem == origem)%>% group_by(codigo_origem, codigo_receita, nre2_origem_receita_nome, nre3_especie_receita_nome, item_informacao, data_ts, mes_lancamento_sigla_mmm) %>% summarise(saldo = sum(saldo_r_item_informacao), movimento = sum(movim_liquido_r_item_informacao)) %>% pivot_wider(names_from = item_informacao, values_from = c(saldo, movimento)) %>% adorn_totals("row")%>% arrange(nre2_origem_receita_nome) %>% mutate(codigo_receita = ifelse(codigo_origem == "Total",paste0( str_sub(max(codigo_receita),end = -2L),0),codigo_receita)) %>% mutate(item = ifelse(codigo_origem == "Total",paste0(codigo_receita,"-", max(nre2_origem_receita_nome)),paste0(codigo_receita, "-",  nre3_especie_receita_nome))) %>% clean_names() 
+}
+
+
+
+# teste <- teste%>% mutate(nre2_origem_receita_nome = if_else(nre2_origem_receita_nome == "Total", "Teste", as.character( unique(a1_receita %>% filter(codigo_origem==11) %>% select(nre2_origem_receita_nome)))))
+# 
+# 
+# 
+# teste <- a1_receita %>% filter (mes_lancamento_sigla_mmm == mes_relatorio,codigo_origem == 11)%>% group_by(nre2_origem_receita_nome, nre3_especie_receita_nome, codigo_receita, item_informacao, data_ts, mes_lancamento_sigla_mmm) %>% summarise(saldo = sum(saldo_r_item_informacao)) %>% pivot_wider(names_from = item_informacao, values_from = saldo) %>% adorn_totals("row") 
+#   
+# teste <- teste%>% mutate(nre2_origem_receita_nome = if_else(nre2_origem_receita_nome == "Total", "Teste", as.character( unique(a1_receita %>% filter(codigo_origem==11) %>% select(nre2_origem_receita_nome))))) %>% arrange(codigo_receita)
+```
+
+```{r}
+datatable(a1_receita %>% filter ( nre2_origem_receita_codigo_origem %!in% rec_intra)%>% group_by(nre2_origem_receita_nome, nre3_especie_receita_nome, item_informacao, data_ts, mes_lancamento_sigla_mmm) %>% summarise(saldo = sum(saldo_r_item_informacao)) %>% pivot_wider(names_from = item_informacao, values_from = saldo))
+```
+
+```{r}
+zz <- map_df( unique(a1_receita$codigo_origem), receita)
+
+zz <- zz %>% select(-movimento_previsao_atualizada_da_receita,-movimento_previsao_inicial_da_receita) %>% mutate(percentual_ate_mes = saldo_receita_orcamentaria_liquida/saldo_previsao_atualizada_da_receita, percentual_no_mes = movimento_receita_orcamentaria_liquida/saldo_previsao_atualizada_da_receita, saldo_a_realizar = saldo_previsao_atualizada_da_receita-saldo_receita_orcamentaria_liquida)
+
+tabela <- zz %>% select(item,saldo_previsao_inicial_da_receita,saldo_previsao_atualizada_da_receita,movimento_receita_orcamentaria_liquida,percentual_no_mes,saldo_receita_orcamentaria_liquida,percentual_ate_mes,saldo_a_realizar)
+
+datatable(tabela,  options = list(
+  language = list(url = "//cdn.datatables.net/plug-ins/1.10.11/i18n/Portuguese.json"),
+  pageLength = 10
+), caption = "Receita") %>% formatCurrency(c(2,3,4,6,8), "R$ ",
+  mark = ".",
+  digits = 2, dec.mark = ",") %>% formatPercentage(c(5,7))
+
+bb <- map_df( unique(refinanciamento$codigo_origem), receita)
+
+ff <- (datatable(zz,  options = list(
+  language = list(url = "//cdn.datatables.net/plug-ins/1.10.11/i18n/Portuguese.json"),
+  pageLength = 10
+), caption = "Receita") %>% formatCurrency(c(7,8,9,10,14), "R$ ",
+  mark = ".",
+  digits = 2, dec.mark = ",") %>% formatPercentage(c(12,13)))
+
+
+bb1 <- (datatable(bb,  options = list(
+  language = list(url = "//cdn.datatables.net/plug-ins/1.10.11/i18n/Portuguese.json"),
+  pageLength = 10
+), caption = "Receita") %>% formatCurrency(c(7,8,9,10,14), "R$ ",
+  mark = ".",
+  digits = 2, dec.mark = ",") %>% formatPercentage(c(12,13)))
+
+
+
+refinanciamento <- a1_receita %>% filter( natureza_receita_codigo_completo %in% c(21210201,221110201))
+
+
+
+```
